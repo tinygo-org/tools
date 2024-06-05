@@ -143,7 +143,7 @@ func createFunction(prog *Program, obj *types.Func, name string, syntax ast.Node
 	if tparams.Len() > 0 {
 		fn.generic = new(generic)
 	}
-	cr.Add(fn)
+	cr.add(fn)
 	return fn
 }
 
@@ -191,11 +191,9 @@ func membersFromDecl(pkg *Package, decl ast.Decl, goversion string) {
 // creators are not thread-safe.
 type creator []*Function
 
-func (c *creator) Add(fn *Function) {
-	*c = append(*c, fn)
-}
-func (c *creator) At(i int) *Function { return (*c)[i] }
-func (c *creator) Len() int           { return len(*c) }
+func (c *creator) add(fn *Function)   { fn.built = make(chan unit); *c = append(*c, fn) }
+func (c *creator) at(i int) *Function { return (*c)[i] }
+func (c *creator) len() int           { return len(*c) }
 
 // CreatePackage creates and returns an SSA Package from the
 // specified type-checked, error-free file ASTs, and populates its
@@ -238,7 +236,7 @@ func (prog *Program) CreatePackage(pkg *types.Package, files []*ast.File, info *
 		goversion: "", // See Package.build for details.
 	}
 	p.Members[p.init.name] = p.init
-	p.created.Add(p.init)
+	p.created.add(p.init)
 
 	// Allocate all package members: vars, funcs, consts and types.
 	if len(files) > 0 {

@@ -332,15 +332,8 @@ func buildReferrers(f *Function) {
 
 // finishBody() finalizes the contents of the function after SSA code generation of its body.
 //
-// The function is not done being built until done() is called.
+// The function is not fully built until finish() is called.
 func (f *Function) finishBody() {
-	f.currentBlock = nil
-	f.lblocks = nil
-	f.returnVars = nil
-	f.jump = nil
-	f.source = nil
-	f.exits = nil
-
 	// Remove from f.Locals any Allocs that escape to the heap.
 	j := 0
 	for _, l := range f.Locals {
@@ -368,40 +361,42 @@ func (f *Function) finishBody() {
 		lift(f)
 	}
 
-	// clear remaining builder state
+	// clear transient builder state
+	f.currentBlock = nil
+	f.lblocks = nil
+	f.returnVars = nil
+	f.jump = nil
+	f.source = nil
+	f.exits = nil
 	f.results = nil    // (used by lifting)
 	f.deferstack = nil // (used by lifting)
 	f.vars = nil       // (used by lifting)
 	f.subst = nil
+	f.uniq = 0
+	f.build = nil
+	f.targets = nil
 
 	numberRegisters(f) // uses f.namedRegisters
 }
 
-// done marks the building of f's SSA body complete,
+// finish marks the building of f's SSA body complete,
 // along with any nested functions, and optionally prints them.
-func (f *Function) done() {
-	assert(f.parent == nil, "done called on an anonymous function")
-
-	var visit func(*Function)
-	visit = func(f *Function) {
-		for _, anon := range f.AnonFuncs {
-			visit(anon) // anon is done building before f.
-		}
-
-		f.uniq = 0    // done with uniq
-		f.build = nil // function is built
-
-		if f.Prog.mode&PrintFunctions != 0 {
-			printMu.Lock()
-			f.WriteTo(os.Stdout)
-			printMu.Unlock()
-		}
-
-		if f.Prog.mode&SanityCheckFunctions != 0 {
-			mustSanityCheck(f, nil)
-		}
+func (f *Function) finish() {
+	for _, anon := range f.AnonFuncs {
+		anon.finish() // anon is done building before f.
 	}
-	visit(f)
+
+	close(f.built) // broadcast completion of build
+
+	if f.Prog.mode&PrintFunctions != 0 {
+		printMu.Lock()
+		f.WriteTo(os.Stdout)
+		printMu.Unlock()
+	}
+
+	if f.Prog.mode&SanityCheckFunctions != 0 {
+		mustSanityCheck(f, nil)
+	}
 }
 
 // removeNilBlocks eliminates nils from f.Blocks and updates each

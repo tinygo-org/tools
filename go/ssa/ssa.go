@@ -365,7 +365,7 @@ type Function struct {
 	generic        *generic             // instances of this function, if generic
 
 	// The following fields are cleared after building.
-	build        buildFunc                // algorithm to build function body (nil => built)
+	build        buildFunc                // algorithm to build function body
 	currentBlock *BasicBlock              // where to emit code
 	vars         map[*types.Var]Value     // addresses of local variables
 	results      []*Alloc                 // result allocations of the current function
@@ -378,6 +378,7 @@ type Function struct {
 	source       *Function                // nearest enclosing source function
 	exits        []*exit                  // exits of the function that need to be resolved
 	uniq         int64                    // source of unique ints within the source tree while building
+	built        chan unit                // closed (not zeroed) upon completion of build
 }
 
 // BasicBlock represents an SSA basic block.

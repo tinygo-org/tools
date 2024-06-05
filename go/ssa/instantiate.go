@@ -107,7 +107,7 @@ func createInstance(fn *Function, targs []types.Type, cr *creator) *Function {
 		typeargs:       targs,
 		subst:          subst,
 	}
-	cr.Add(instance)
+	cr.add(instance)
 	return instance
 }
 

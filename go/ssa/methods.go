@@ -42,42 +42,47 @@ func (prog *Program) MethodValue(sel *types.Selection) *Function {
 
 	var cr creator
 
-	m := func() *Function {
-		prog.methodsMu.Lock()
-		defer prog.methodsMu.Unlock()
+	prog.methodsMu.Lock()
 
-		// Get or create SSA method set.
-		mset, ok := prog.methodSets.At(T).(*methodSet)
-		if !ok {
-			mset = &methodSet{mapping: make(map[string]*Function)}
-			prog.methodSets.Set(T, mset)
+	// Get or create SSA method set.
+	mset, ok := prog.methodSets.At(T).(*methodSet)
+	if !ok {
+		mset = &methodSet{mapping: make(map[string]*Function)}
+		prog.methodSets.Set(T, mset)
+	}
+
+	// Get or create SSA method.
+	id := sel.Obj().Id()
+	fn, ok := mset.mapping[id]
+	if !ok {
+		obj := sel.Obj().(*types.Func)
+		needsPromotion := len(sel.Index()) > 1
+		needsIndirection := !isPointer(recvType(obj)) && isPointer(T)
+		if needsPromotion || needsIndirection {
+			fn = createWrapper(prog, toSelection(sel), &cr)
+		} else {
+			fn = prog.objectMethod(obj, &cr)
 		}
-
-		// Get or create SSA method.
-		id := sel.Obj().Id()
-		fn, ok := mset.mapping[id]
-		if !ok {
-			obj := sel.Obj().(*types.Func)
-			needsPromotion := len(sel.Index()) > 1
-			needsIndirection := !isPointer(recvType(obj)) && isPointer(T)
-			if needsPromotion || needsIndirection {
-				fn = createWrapper(prog, toSelection(sel), &cr)
-			} else {
-				fn = prog.objectMethod(obj, &cr)
-			}
-			if fn.Signature.Recv() == nil {
-				panic(fn)
-			}
-			mset.mapping[id] = fn
+		if fn.Signature.Recv() == nil {
+			panic(fn)
 		}
+		mset.mapping[id] = fn // not yet built
+	}
 
-		return fn
-	}()
+	prog.methodsMu.Unlock()
 
-	b := builder{created: &cr}
-	b.iterate()
+	if !ok {
+		// Cache miss: build the newly created method,
+		// broadcasting its built event.
+		b := builder{created: &cr}
+		b.iterate()
+	} else {
+		// Cache hit: wait for the creating thread to
+		// finish building and signal fn.built.
+		<-fn.built
+	}
 
-	return m
+	return fn
 }
 
 // objectMethod returns the Function for a given method symbol.
@@ -136,7 +141,7 @@ func (prog *Program) LookupMethod(T types.Type, pkg *types.Package, name string)
 
 // methodSet contains the (concrete) methods of a concrete type (non-interface, non-parameterized).
 type methodSet struct {
-	mapping map[string]*Function // populated lazily
+	mapping map[string]*Function // populated lazily; may be unbuilt
 }
 
 // RuntimeTypes returns a new unordered slice containing all types in

@@ -620,12 +620,14 @@ func (b *builder) expr0(fn *Function, e ast.Expr, tv types.TypeAndValue) Value {
 			info:           fn.info,
 			goversion:      fn.goversion,
 			build:          (*builder).buildFromSyntax,
-			topLevelOrigin: nil,           // use anonIdx to lookup an anon instance's origin.
-			typeparams:     fn.typeparams, // share the parent's type parameters.
-			typeargs:       fn.typeargs,   // share the parent's type arguments.
-			subst:          fn.subst,      // share the parent's type substitutions.
-			uniq:           fn.uniq,       // start from parent's unique values
+			topLevelOrigin: nil,             // use anonIdx to lookup an anon instance's origin.
+			typeparams:     fn.typeparams,   // share the parent's type parameters.
+			typeargs:       fn.typeargs,     // share the parent's type arguments.
+			subst:          fn.subst,        // share the parent's type substitutions.
+			uniq:           fn.uniq,         // start from parent's unique values
+			built:          make(chan unit), // (since we don't use a creator)
 		}
+
 		fn.AnonFuncs = append(fn.AnonFuncs, anon)
 		// Build anon immediately, as it may cause fn's locals to escape.
 		// (It is not marked 'built' until the end of the enclosing FuncDecl.)
@@ -2481,8 +2483,9 @@ func (b *builder) rangeFunc(fn *Function, x Value, tk, tv types.Type, rng *ast.R
 		subst:          fn.subst,
 		jump:           jump,
 		deferstack:     fn.deferstack,
-		returnVars:     fn.returnVars, // use the parent's return variables
-		uniq:           fn.uniq,       // start from parent's unique values
+		returnVars:     fn.returnVars,   // use the parent's return variables
+		uniq:           fn.uniq,         // start from parent's unique values
+		built:          make(chan unit), // (since we don't use a creator)
 	}
 
 	// If the RangeStmt has a label, this is how it is passed to buildYieldFunc.
@@ -2839,8 +2842,8 @@ type buildFunc = func(*builder, *Function)
 // this may create new methods, the process is iterated until it
 // converges.
 func (b *builder) iterate() {
-	for ; b.finished < b.created.Len(); b.finished++ {
-		fn := b.created.At(b.finished)
+	for ; b.finished < b.created.len(); b.finished++ {
+		fn := b.created.at(b.finished)
 		b.buildFunction(fn)
 	}
 }
@@ -2854,7 +2857,7 @@ func (b *builder) buildFunction(fn *Function) {
 			defer logStack("build %s @ %s", fn, fn.Prog.Fset.Position(fn.pos))()
 		}
 		fn.build(b, fn)
-		fn.done()
+		fn.finish()
 	}
 }
 
@@ -3084,7 +3087,7 @@ func (prog *Program) Build() {
 			p.Build()
 		} else {
 			wg.Add(1)
-			cpuLimit <- struct{}{} // acquire a token
+			cpuLimit <- unit{} // acquire a token
 			go func(p *Package) {
 				p.Build()
 				wg.Done()
@@ -3096,7 +3099,7 @@ func (prog *Program) Build() {
 }
 
 // cpuLimit is a counting semaphore to limit CPU parallelism.
-var cpuLimit = make(chan struct{}, runtime.GOMAXPROCS(0))
+var cpuLimit = make(chan unit, runtime.GOMAXPROCS(0))
 
 // Build builds SSA code for all functions and vars in package p.
 //

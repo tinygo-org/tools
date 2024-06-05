@@ -77,7 +77,7 @@ func createWrapper(prog *Program, sel *selection, cr *creator) *Function {
 		info:      nil,
 		goversion: "",
 	}
-	cr.Add(fn)
+	cr.add(fn)
 	return fn
 }
 
@@ -208,7 +208,7 @@ func createBound(prog *Program, obj *types.Func, cr *creator) *Function {
 		goversion: "",
 	}
 	fn.FreeVars = []*FreeVar{{name: "recv", typ: recvType(obj), parent: fn}} // (cyclic)
-	cr.Add(fn)
+	cr.add(fn)
 	return fn
 }
 
